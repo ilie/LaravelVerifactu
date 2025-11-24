@@ -14,7 +14,7 @@ class VeriFactuServiceProvider extends ServiceProvider
     public function register(): void
     {
         // Registrar bindings, singletons, etc.
-        $this->mergeConfigFrom(__DIR__.'/../../config/verifactu.php', 'verifactu');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/verifactu.php', 'verifactu');
     }
 
     /**
@@ -22,12 +22,21 @@ class VeriFactuServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Publicar archivos de configuración
-        $this->publishes([
-            __DIR__.'/../../config/verifactu.php' => config_path('verifactu.php'),
-        ], 'config');
+        if ($this->app->runningInConsole()) {
+            // Publicar archivos de configuración
+            $this->publishes([
+                __DIR__ . '/../../config/verifactu.php' => config_path('verifactu.php'),
+            ], 'verifactu-config');
 
-        // Publicar migraciones
-        $this->loadMigrationsFrom(__DIR__.'/../../database/migrations');
+            // Publicar migraciones solo si está habilitado en config
+            if (config('verifactu.load_migrations', false)) {
+                $this->loadMigrationsFrom(__DIR__ . '/../../database/migrations');
+            }
+
+            // Registrar comandos
+            $this->commands([
+                \Squareetlabs\VeriFactu\Console\Commands\MakeAdapterCommand::class,
+            ]);
+        }
     }
-} 
+}

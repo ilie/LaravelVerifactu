@@ -10,8 +10,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Squareetlabs\VeriFactu\Enums\TaxType;
 use Squareetlabs\VeriFactu\Enums\RegimeType;
 use Squareetlabs\VeriFactu\Enums\OperationType;
+use Squareetlabs\VeriFactu\Contracts\VeriFactuBreakdown;
 
-class Breakdown extends Model
+class Breakdown extends Model implements VeriFactuBreakdown
 {
     use HasFactory;
     use SoftDeletes;
@@ -46,4 +47,31 @@ class Breakdown extends Model
     {
         return $this->belongsTo(Invoice::class);
     }
-} 
+
+    // VeriFactuBreakdown Contract Implementation
+
+    public function getRegimeType(): string
+    {
+        return $this->regime_type?->value ?? '01';
+    }
+
+    public function getOperationType(): string
+    {
+        return $this->operation_type?->value ?? 'S1';
+    }
+
+    public function getTaxRate(): float
+    {
+        return (float) $this->tax_rate;
+    }
+
+    public function getBaseAmount(): float
+    {
+        return (float) $this->base_amount;
+    }
+
+    public function getTaxAmount(): float
+    {
+        return (float) $this->tax_amount;
+    }
+}

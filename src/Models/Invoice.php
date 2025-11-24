@@ -8,8 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Squareetlabs\VeriFactu\Enums\InvoiceType;
+use Squareetlabs\VeriFactu\Contracts\VeriFactuInvoice;
+use Illuminate\Support\Collection;
+use Carbon\Carbon;
 
-class Invoice extends Model
+class Invoice extends Model implements VeriFactuInvoice
 {
     use HasFactory;
     use SoftDeletes;
@@ -27,9 +30,9 @@ class Invoice extends Model
                 'issuer_tax_id' => $invoice->issuer_tax_id,
                 'invoice_number' => $invoice->number,
                 'issue_date' => $invoice->date instanceof \Illuminate\Support\Carbon ? $invoice->date->format('Y-m-d') : $invoice->date,
-                'invoice_type' => $invoice->type instanceof \BackedEnum ? $invoice->type->value : (string)$invoice->type,
-                'total_tax' => (string)$invoice->tax,
-                'total_amount' => (string)$invoice->total,
+                'invoice_type' => $invoice->type instanceof \BackedEnum ? $invoice->type->value : (string) $invoice->type,
+                'total_tax' => (string) $invoice->tax,
+                'total_amount' => (string) $invoice->total,
                 'previous_hash' => $invoice->previous_hash ?? '', // Si implementas encadenamiento
                 'generated_at' => now()->format('c'),
             ];
@@ -79,4 +82,61 @@ class Invoice extends Model
     {
         return $this->hasMany(Recipient::class);
     }
-} 
+
+    // VeriFactuInvoice Contract Implementation
+
+    public function getInvoiceNumber(): string
+    {
+        return $this->number;
+    }
+
+    public function getIssueDate(): Carbon
+    {
+        return $this->date;
+    }
+
+    public function getInvoiceType(): string
+    {
+        return $this->type->value ?? (string) $this->type;
+    }
+
+    public function getTotalAmount(): float
+    {
+        return (float) $this->total;
+    }
+
+    public function getTaxAmount(): float
+    {
+        return (float) $this->tax;
+    }
+
+    public function getCustomerName(): string
+    {
+        return $this->customer_name;
+    }
+
+    public function getCustomerTaxId(): ?string
+    {
+        return $this->customer_tax_id;
+    }
+
+    public function getBreakdowns(): Collection
+    {
+        return $this->breakdowns;
+    }
+
+    public function getRecipients(): Collection
+    {
+        return $this->recipients;
+    }
+
+    public function getPreviousHash(): ?string
+    {
+        return $this->previous_hash ?? null;
+    }
+
+    public function getOperationDescription(): string
+    {
+        return $this->description ?? 'Invoice issued';
+    }
+}

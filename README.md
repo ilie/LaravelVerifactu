@@ -53,8 +53,59 @@ return [
         'name' => env('VERIFACTU_ISSUER_NAME', ''),
         'vat' => env('VERIFACTU_ISSUER_VAT', ''),
     ],
-    // ...
+    
+    // Define si se cargan las migraciones del paquete (por defecto false)
+    'load_migrations' => env('VERIFACTU_LOAD_MIGRATIONS', false),
 ];
+```
+
+---
+
+## Integración
+
+Este paquete soporta dos modos de uso:
+
+### 1. Proyectos Nuevos (Uso completo)
+
+Si estás empezando un proyecto desde cero, puedes usar los modelos y migraciones que incluye el paquete.
+
+1. Habilita las migraciones en tu `.env`:
+   ```env
+   VERIFACTU_LOAD_MIGRATIONS=true
+   ```
+2. Ejecuta las migraciones:
+   ```bash
+   php artisan migrate
+   ```
+3. Usa los modelos `Squareetlabs\VeriFactu\Models\Invoice`, `Breakdown` y `Recipient` directamente.
+
+### 2. Sistemas Existentes (Adaptador)
+
+Si ya tienes tu propio sistema de facturación, no necesitas usar nuestras migraciones. Solo necesitas implementar los contratos en tus modelos.
+
+1. Asegúrate de que `VERIFACTU_LOAD_MIGRATIONS` es `false` (por defecto).
+2. Genera un adaptador para tu modelo de factura:
+   ```bash
+   php artisan verifactu:make-adapter Invoice
+   ```
+3. Esto generará el código necesario en tu terminal. Cópialo a tu modelo `App\Models\Invoice` e implementa la interfaz `VeriFactuInvoice`.
+
+Ejemplo de implementación:
+
+```php
+use Squareetlabs\VeriFactu\Contracts\VeriFactuInvoice;
+use Illuminate\Database\Eloquent\Model;
+
+class Invoice extends Model implements VeriFactuInvoice
+{
+    // Implementa los métodos requeridos por la interfaz
+    public function getInvoiceNumber(): string
+    {
+        return $this->invoice_number; // Tu campo personalizado
+    }
+    
+    // ... resto de métodos
+}
 ```
 
 ---

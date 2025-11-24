@@ -1,0 +1,96 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Squareetlabs\VeriFactu\Contracts;
+
+use Illuminate\Support\Collection;
+use Carbon\Carbon;
+
+/**
+ * Contract that invoice models must implement to be compatible with VeriFactu
+ */
+interface VeriFactuInvoice
+{
+    /**
+     * Get the invoice number/series
+     *
+     * @return string
+     */
+    public function getInvoiceNumber(): string;
+
+    /**
+     * Get the invoice issue date
+     *
+     * @return Carbon
+     */
+    public function getIssueDate(): Carbon;
+
+    /**
+     * Get the invoice type according to AEAT specifications
+     * Valid values: F1, F2, F3, F4, R1, R2, R3, R4, R5
+     *
+     * @return string
+     */
+    public function getInvoiceType(): string;
+
+    /**
+     * Get the total amount in euros (including tax)
+     *
+     * @return float
+     */
+    public function getTotalAmount(): float;
+
+    /**
+     * Get the total tax amount in euros
+     *
+     * @return float
+     */
+    public function getTaxAmount(): float;
+
+    /**
+     * Get the customer/recipient name
+     *
+     * @return string
+     */
+    public function getCustomerName(): string;
+
+    /**
+     * Get the customer tax ID (NIF/CIF)
+     * Can be null for foreign customers or when using IDOtro
+     *
+     * @return string|null
+     */
+    public function getCustomerTaxId(): ?string;
+
+    /**
+     * Get the invoice breakdowns (tax details by regime/rate)
+     * Must return at least one breakdown
+     *
+     * @return Collection<VeriFactuBreakdown>
+     */
+    public function getBreakdowns(): Collection;
+
+    /**
+     * Get additional recipients (optional, for multiple recipients)
+     * Return empty collection if not applicable
+     *
+     * @return Collection<VeriFactuRecipient>
+     */
+    public function getRecipients(): Collection;
+
+    /**
+     * Get the previous invoice hash for chaining
+     * Return null for the first invoice in the chain
+     *
+     * @return string|null
+     */
+    public function getPreviousHash(): ?string;
+
+    /**
+     * Get the operation description
+     *
+     * @return string
+     */
+    public function getOperationDescription(): string;
+}

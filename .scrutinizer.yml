@@ -1,5 +1,0 @@
-build:
-    dependencies:
-        before:
-            - sudo apt-get update
-            - sudo apt-get install -y openssl libssl-dev pkg-config

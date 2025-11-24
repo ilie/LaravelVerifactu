@@ -7,8 +7,9 @@ namespace Squareetlabs\VeriFactu\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Squareetlabs\VeriFactu\Contracts\VeriFactuRecipient;
 
-class Recipient extends Model
+class Recipient extends Model implements VeriFactuRecipient
 {
     use HasFactory;
     use SoftDeletes;
@@ -32,4 +33,16 @@ class Recipient extends Model
     {
         return $this->belongsTo(Invoice::class);
     }
-} 
+
+    // VeriFactuRecipient Contract Implementation
+
+    public function getName(): string
+    {
+        return $this->name;
+    }
+
+    public function getTaxId(): ?string
+    {
+        return $this->tax_id;
+    }
+}
