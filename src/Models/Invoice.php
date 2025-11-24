@@ -63,10 +63,14 @@ class Invoice extends Model implements VeriFactuInvoice
         'issued_at',
         'cancelled_at',
         'hash',
+        'operation_date',
+        'tax_period',
+        'correction_type',
     ];
 
     protected $casts = [
         'date' => 'date',
+        'operation_date' => 'date',
         'type' => InvoiceType::class,
         'amount' => 'decimal:2',
         'tax' => 'decimal:2',
@@ -138,5 +142,25 @@ class Invoice extends Model implements VeriFactuInvoice
     public function getOperationDescription(): string
     {
         return $this->description ?? 'Invoice issued';
+    }
+
+    public function getOperationDate(): ?Carbon
+    {
+        return $this->operation_date;
+    }
+
+    public function getTaxPeriod(): ?string
+    {
+        return $this->tax_period;
+    }
+
+    public function getCorrectionType(): ?string
+    {
+        return $this->correction_type;
+    }
+
+    public function getExternalReference(): ?string
+    {
+        return $this->external_reference;
     }
 }

@@ -6,6 +6,7 @@ namespace Squareetlabs\VeriFactu\Services;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
+use Squareetlabs\VeriFactu\Contracts\VeriFactuInvoice;
 use Squareetlabs\VeriFactu\Models\Invoice;
 use Illuminate\Support\Facades\Log;
 
@@ -34,16 +35,7 @@ class AeatClient
         ]);
     }
 
-    /**
-     * Format a number to 2 decimal places
-     *
-     * @param mixed $value
-     * @return string
-     */
-    private function fmt2($value): string
-    {
-        return sprintf('%.2f', (float) $value);
-    }
+
 
     /**
      * Build fingerprint/hash for invoice chaining
@@ -89,62 +81,34 @@ class AeatClient
     /**
      * Send invoice registration to AEAT with support for invoice chaining
      *
-     * @param \Squareetlabs\VeriFactu\Contracts\VeriFactuInvoice $invoice
+     * @param VeriFactuInvoice $invoice
      * @param array|null $previous Previous invoice data for chaining (hash, number, date)
      * @return array
      */
-    public function sendInvoice(\Squareetlabs\VeriFactu\Contracts\VeriFactuInvoice $invoice, ?array $previous = null): array
+    /**
+     * Send invoice registration to AEAT with support for invoice chaining
+     *
+     * @param VeriFactuInvoice $invoice
+     * @param array|null $previous Previous invoice data for chaining (hash, number, date)
+     * @return array
+     */
+    public function sendInvoice(VeriFactuInvoice $invoice, ?array $previous = null): array
     {
-        // 1. Obtener datos del emisor desde config
+        // 1. Obtener datos del emisor
         $issuer = config('verifactu.issuer');
         $issuerName = $issuer['name'] ?? '';
         $issuerVat = $issuer['vat'] ?? '';
 
-        // 2. Mapear Invoice a estructura AEAT
-        $cabecera = [
-            'ObligadoEmision' => [
-                'NombreRazon' => $issuerName,
-                'NIF' => $issuerVat,
-            ],
-        ];
-
-        // 3. Mapear desgloses (Breakdown) con campos requeridos
-        $breakdowns = $invoice->getBreakdowns();
-
-        $detalle = [];
-        foreach ($breakdowns as $breakdown) {
-            $detalle[] = [
-                'ClaveRegimen' => $breakdown->getRegimeType(),
-                'CalificacionOperacion' => $breakdown->getOperationType(),
-                'TipoImpositivo' => (float) $breakdown->getTaxRate(),
-                'BaseImponibleOimporteNoSujeto' => $this->fmt2($breakdown->getBaseAmount()),
-                'CuotaRepercutida' => $this->fmt2($breakdown->getTaxAmount()),
-            ];
-        }
-
-        // Si no hay desgloses, crear uno por defecto
-        if (count($detalle) === 0) {
-            $base = $this->fmt2($invoice->getTotalAmount() - $invoice->getTaxAmount());
-            $detalle[] = [
-                'ClaveRegimen' => '01',
-                'CalificacionOperacion' => 'S1',
-                'TipoImpositivo' => 0.0,
-                'BaseImponibleOimporteNoSujeto' => $base,
-                'CuotaRepercutida' => $this->fmt2(0),
-            ];
-        }
-
-        // 4. Generar timestamp y preparar datos para huella
+        // 2. Preparar datos comunes
         $ts = \Carbon\Carbon::now('UTC')->format('c');
         $numSerie = (string) $invoice->getInvoiceNumber();
         $fechaExp = $invoice->getIssueDate()->format('d-m-Y');
-        $fechaExpYMD = $invoice->getIssueDate()->format('Y-m-d');
         $tipoFactura = $invoice->getInvoiceType();
-        $cuotaTotal = $this->fmt2($invoice->getTaxAmount());
-        $importeTotal = $this->fmt2($invoice->getTotalAmount());
+        $cuotaTotal = sprintf('%.2f', (float) $invoice->getTaxAmount());
+        $importeTotal = sprintf('%.2f', (float) $invoice->getTotalAmount());
         $prevHash = $previous['hash'] ?? $invoice->getPreviousHash() ?? '';
 
-        // 5. Generar huella (hash)
+        // 3. Generar huella
         $huella = $this->buildFingerprint(
             $issuerVat,
             $numSerie,
@@ -156,19 +120,127 @@ class AeatClient
             $prevHash
         );
 
-        // 6. Construir Encadenamiento
-        $encadenamiento = $previous
-            ? [
+        // 4. Construir partes del mensaje
+        $cabecera = $this->buildHeader($issuerName, $issuerVat);
+        $detalle = $this->buildBreakdowns($invoice);
+        $encadenamiento = $this->buildChaining($previous, $issuerVat);
+        $destinatarios = $this->buildRecipients($invoice);
+
+        // 5. Construir RegistroAlta
+        $registroAlta = $this->buildRegistration(
+            $invoice,
+            $issuerName,
+            $issuerVat,
+            $numSerie,
+            $fechaExp,
+            $tipoFactura,
+            $cuotaTotal,
+            $importeTotal,
+            $ts,
+            $huella,
+            $detalle,
+            $encadenamiento,
+            $destinatarios
+        );
+
+        $body = [
+            'Cabecera' => $cabecera,
+            'RegistroFactura' => [
+                ['RegistroAlta' => $registroAlta]
+            ],
+        ];
+
+        // 6. Enviar
+        return $this->performSoapCall($body, $huella, $numSerie, $fechaExp, $ts, $previous);
+    }
+
+    private function buildHeader(string $issuerName, string $issuerVat): array
+    {
+        return [
+            'ObligadoEmision' => [
+                'NombreRazon' => $issuerName,
+                'NIF' => $issuerVat,
+            ],
+        ];
+    }
+
+    private function buildBreakdowns(VeriFactuInvoice $invoice): array
+    {
+        $breakdowns = $invoice->getBreakdowns();
+        $detalle = [];
+
+        foreach ($breakdowns as $breakdown) {
+            $detalle[] = [
+                'ClaveRegimen' => $breakdown->getRegimeType(),
+                'CalificacionOperacion' => $breakdown->getOperationType(),
+                'TipoImpositivo' => (float) $breakdown->getTaxRate(),
+                'BaseImponibleOimporteNoSujeto' => sprintf('%.2f', (float) $breakdown->getBaseAmount()),
+                'CuotaRepercutida' => sprintf('%.2f', (float) $breakdown->getTaxAmount()),
+            ];
+        }
+
+        if (count($detalle) === 0) {
+            $base = sprintf('%.2f', (float) $invoice->getTotalAmount() - $invoice->getTaxAmount());
+            $detalle[] = [
+                'ClaveRegimen' => '01',
+                'CalificacionOperacion' => 'S1',
+                'TipoImpositivo' => 0.0,
+                'BaseImponibleOimporteNoSujeto' => $base,
+                'CuotaRepercutida' => sprintf('%.2f', 0.0),
+            ];
+        }
+
+        return $detalle;
+    }
+
+    private function buildChaining(?array $previous, string $issuerVat): array
+    {
+        if ($previous) {
+            return [
                 'RegistroAnterior' => [
                     'IDEmisorFactura' => $issuerVat,
                     'NumSerieFactura' => $previous['number'],
                     'FechaExpedicionFactura' => $previous['date'],
                     'Huella' => $previous['hash'],
                 ],
-            ]
-            : ['PrimerRegistro' => 'S'];
+            ];
+        }
+        return ['PrimerRegistro' => 'S'];
+    }
 
-        // 7. Construir RegistroAlta
+    private function buildRecipients(VeriFactuInvoice $invoice): ?array
+    {
+        $recipients = $invoice->getRecipients();
+        if ($recipients->count() > 0) {
+            $destinatarios = [];
+            foreach ($recipients as $recipient) {
+                $r = ['NombreRazon' => $recipient->getName()];
+                $taxId = $recipient->getTaxId();
+                if (!empty($taxId)) {
+                    $r['NIF'] = $taxId;
+                }
+                $destinatarios[] = $r;
+            }
+            return ['IDDestinatario' => $destinatarios];
+        }
+        return null;
+    }
+
+    private function buildRegistration(
+        VeriFactuInvoice $invoice,
+        string $issuerName,
+        string $issuerVat,
+        string $numSerie,
+        string $fechaExp,
+        string $tipoFactura,
+        string $cuotaTotal,
+        string $importeTotal,
+        string $ts,
+        string $huella,
+        array $detalle,
+        array $encadenamiento,
+        ?array $destinatarios
+    ): array {
         $registroAlta = [
             'IDVersion' => '1.0',
             'IDFactura' => [
@@ -199,35 +271,39 @@ class AeatClient
             'Huella' => $huella,
         ];
 
-        // 8. Mapear destinatarios (opcional, solo si existen)
-        $recipients = $invoice->getRecipients();
-        if ($recipients->count() > 0) {
-            $destinatarios = [];
-            foreach ($recipients as $recipient) {
-                $r = ['NombreRazon' => $recipient->getName()];
-                $taxId = $recipient->getTaxId();
-                if (!empty($taxId)) {
-                    $r['NIF'] = $taxId;
-                }
-                $destinatarios[] = $r;
-            }
-            $registroAlta['Destinatarios'] = ['IDDestinatario' => $destinatarios];
+        // Campos opcionales nuevos
+        if ($invoice->getOperationDate()) {
+            $registroAlta['FechaOperacion'] = $invoice->getOperationDate()->format('d-m-Y');
         }
 
-        $body = [
-            'Cabecera' => $cabecera,
-            'RegistroFactura' => [
-                ['RegistroAlta' => $registroAlta]
-            ],
-        ];
+        if ($invoice->getTaxPeriod()) {
+            $registroAlta['PeriodoImpositivo'] = [
+                'Ejercicio' => $invoice->getIssueDate()->format('Y'),
+                'Periodo' => $invoice->getTaxPeriod(),
+            ];
+        }
 
-        // 9. Configurar SoapClient y enviar
+        if ($invoice->getCorrectionType()) {
+            $registroAlta['TipoRectificativa'] = $invoice->getCorrectionType();
+        }
+
+        if ($invoice->getExternalReference()) {
+            $registroAlta['RefExterna'] = $invoice->getExternalReference();
+        }
+
+        if ($destinatarios) {
+            $registroAlta['Destinatarios'] = $destinatarios;
+        }
+
+        return $registroAlta;
+    }
+
+    protected function getSoapClient(): \SoapClient
+    {
         $wsdl = $this->production
             ? 'https://www1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP?wsdl'
             : 'https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/SistemaFacturacion.wsdl';
-        $location = $this->production
-            ? 'https://www1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP'
-            : 'https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP';
+
         $options = [
             'local_cert' => $this->certPath,
             'passphrase' => $this->certPassword,
@@ -249,8 +325,17 @@ class AeatClient
             ]),
         ];
 
+        return new \SoapClient($wsdl, $options);
+    }
+
+    private function performSoapCall(array $body, string $huella, string $numSerie, string $fechaExp, string $ts, ?array $previous): array
+    {
+        $location = $this->production
+            ? 'https://www1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP'
+            : 'https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP';
+
         try {
-            $client = new \SoapClient($wsdl, $options);
+            $client = $this->getSoapClient();
             $client->__setLocation($location);
             $response = $client->__soapCall('RegFactuSistemaFacturacion', [$body]);
             return [
@@ -273,6 +358,5 @@ class AeatClient
             ];
         }
     }
-
-    // Métodos adicionales para anulación, consulta, etc. pueden añadirse aquí
 }
+

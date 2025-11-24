@@ -93,4 +93,33 @@ interface VeriFactuInvoice
      * @return string
      */
     public function getOperationDescription(): string;
+
+    /**
+     * Get the operation date (if different from issue date)
+     *
+     * @return Carbon|null
+     */
+    public function getOperationDate(): ?Carbon;
+
+    /**
+     * Get the tax period (e.g., "01", "02", "0A")
+     *
+     * @return string|null
+     */
+    public function getTaxPeriod(): ?string;
+
+    /**
+     * Get the correction type (e.g., "S", "I")
+     * Required for corrective invoices (R1-R5)
+     *
+     * @return string|null
+     */
+    public function getCorrectionType(): ?string;
+
+    /**
+     * Get the external reference (optional)
+     *
+     * @return string|null
+     */
+    public function getExternalReference(): ?string;
 }
